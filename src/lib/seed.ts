@@ -54,6 +54,7 @@ export const EXERCISES: readonly SeedExercise[] = [
   ex('Incline dumbbell curl', 'Curl en banco inclinado', MB, 'bíceps'),
   ex('Lying triceps extension', 'Extensión de tríceps tumbado', MB, 'tríceps'),
   ex('Single-leg calf raise', 'Gemelos a una pierna', 'peso corporal', 'piernas'),
+  ex('Ring biceps curl', 'Curl de bíceps en anillas', ANILLAS, 'bíceps'),
 ];
 
 export function seedExercises(db: Db): void {
