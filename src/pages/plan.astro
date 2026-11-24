@@ -1,0 +1,59 @@
+---
+import Layout from '../layouts/Layout.astro';
+import { getDb } from '../lib/db';
+import { getWeekPlan, listRoutines, setWeekPlan } from '../lib/repo';
+
+const db = getDb();
+
+if (Astro.request.method === 'POST') {
+  const form = await Astro.request.formData();
+  const plan = Array.from({ length: 7 }, (_, day) => {
+    const value = form.get(`day-${day}`);
+    return value ? Number(value) : null;
+  });
+  setWeekPlan(db, plan);
+  return Astro.redirect('/plan', 303);
+}
+
+const routines = listRoutines(db);
+const plan = getWeekPlan(db);
+// Monday first; indexes follow Date#getDay (0 = Sunday).
+const days = [
+  [1, 'Lunes'],
+  [2, 'Martes'],
+  [3, 'Miércoles'],
+  [4, 'Jueves'],
+  [5, 'Viernes'],
+  [6, 'Sábado'],
+  [0, 'Domingo'],
+] as const;
+---
+
+<Layout title="Semana · Gym">
+  <h1>Plan semanal</h1>
+  {
+    routines.length === 0 ? (
+      <div class="card">
+        <p>Crea una rutina primero.</p>
+        <a class="btn primary" href="/routines/new">Nueva rutina</a>
+      </div>
+    ) : (
+      <form method="POST">
+        {days.map(([day, label]) => (
+          <div class="card row">
+            <strong>{label}</strong>
+            <select name={`day-${day}`} style="max-width:60%">
+              <option value="">Día de descanso</option>
+              {routines.map((r) => (
+                <option value={r.id} selected={plan[day] === r.id}>
+                  {r.name}
+                </option>
+              ))}
+            </select>
+          </div>
+        ))}
+        <button class="primary big" type="submit">Guardar semana</button>
+      </form>
+    )
+  }
+</Layout>

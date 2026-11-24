@@ -1,0 +1,25 @@
+---
+import Layout from '../../layouts/Layout.astro';
+import PhotoManager from '../../components/PhotoManager';
+import { getDb } from '../../lib/db';
+import { MAX_PHOTOS_PER_EXERCISE } from '../../lib/photos';
+import { getExercise } from '../../lib/repo';
+
+const id = Number(Astro.params.id);
+const exercise = Number.isInteger(id) ? getExercise(getDb(), id) : null;
+if (!exercise) return new Response('Ejercicio no encontrado', { status: 404 });
+
+---
+
+<Layout title={`${exercise.name} · Gym`}>
+  <p><a href="/ejercicios">‹ Ejercicios</a></p>
+  <h1>{exercise.name}</h1>
+  <p class="muted">{exercise.equipment} · {exercise.muscleGroup}</p>
+  <PhotoManager
+    client:only="react"
+    exerciseId={exercise.id}
+    name={exercise.name}
+    photoIds={exercise.photoIds}
+    max={MAX_PHOTOS_PER_EXERCISE}
+  />
+</Layout>

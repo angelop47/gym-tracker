@@ -1,0 +1,68 @@
+---
+interface Point {
+  label: string;
+  value: number;
+  title: string;
+}
+interface Props {
+  points: Point[];
+  ariaLabel: string;
+}
+const { points, ariaLabel } = Astro.props;
+
+const W = 600;
+const H = 230;
+const left = 46;
+const right = 16;
+const top = 14;
+const bottom = 30;
+const innerW = W - left - right;
+const innerH = H - top - bottom;
+
+const values = points.map((p) => p.value);
+let lo = Math.min(...values);
+let hi = Math.max(...values);
+if (hi === lo) {
+  lo -= 1;
+  hi += 1;
+}
+const pad = (hi - lo) * 0.1;
+lo -= pad;
+hi += pad;
+
+// Sessions are spaced evenly: what matters is the order, not the rest days between them.
+const xOf = (i: number) => (points.length === 1 ? left + innerW / 2 : left + (innerW * i) / (points.length - 1));
+const yOf = (v: number) => top + innerH - ((v - lo) / (hi - lo)) * innerH;
+const fmt = (n: number) => (Math.round(n * 10) / 10).toLocaleString('es-ES');
+const path = points.map((p, i) => `${xOf(i)},${yOf(p.value)}`).join(' ');
+const ticks = [lo + pad, (lo + hi) / 2, hi - pad];
+---
+
+<svg viewBox={`0 0 ${W} ${H}`} role="img" aria-label={ariaLabel}>
+  {
+    ticks.map((t) => (
+      <g>
+        <line x1={left} x2={W - right} y1={yOf(t)} y2={yOf(t)} class="grid" />
+        <text x={left - 6} y={yOf(t) + 4} text-anchor="end" class="axis">{fmt(t)}</text>
+      </g>
+    ))
+  }
+  {points.length > 1 && <polyline points={path} class="line" />}
+  {
+    points.map((p, i) => (
+      <circle cx={xOf(i)} cy={yOf(p.value)} r="5" class="dot">
+        <title>{p.title}</title>
+      </circle>
+    ))
+  }
+  <text x={xOf(0)} y={H - 10} text-anchor={points.length === 1 ? 'middle' : 'start'} class="axis">{points[0].label}</text>
+  {points.length > 1 && <text x={xOf(points.length - 1)} y={H - 10} text-anchor="end" class="axis">{points[points.length - 1].label}</text>}
+</svg>
+
+<style>
+  svg { width: 100%; height: auto; display: block; }
+  .grid { stroke: var(--line); stroke-width: 1; }
+  .axis { fill: var(--muted); font-size: 13px; }
+  .line { fill: none; stroke: var(--accent); stroke-width: 2.5; stroke-linejoin: round; }
+  .dot { fill: var(--accent); stroke: var(--bg); stroke-width: 2; }
+</style>

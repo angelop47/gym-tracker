@@ -1,0 +1,20 @@
+---
+import Layout from '../../../layouts/Layout.astro';
+import RoutineForm from '../../../components/RoutineForm';
+import { getDb } from '../../../lib/db';
+import { getRoutine, listExercises } from '../../../lib/repo';
+
+const db = getDb();
+const id = Number(Astro.params.id);
+const routine = Number.isInteger(id) ? getRoutine(db, id) : null;
+if (!routine) return new Response('Rutina no encontrada', { status: 404 });
+const exercises = listExercises(db);
+---
+
+<Layout title={`Editar ${routine.name} · Gym`}>
+  <h1>Editar rutina</h1>
+  <p class="muted">
+    Los entrenamientos que ya registraste con esta rutina no cambian, y sigue asignada a los mismos días.
+  </p>
+  <RoutineForm client:only="react" exercises={exercises} initial={routine} />
+</Layout>

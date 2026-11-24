@@ -1,0 +1,371 @@
+---
+import Layout from '../layouts/Layout.astro';
+import BarChart from '../components/BarChart.astro';
+import LineChart from '../components/LineChart.astro';
+import { getDb } from '../lib/db';
+import { getExerciseSetHistory, listExercisesWithHistory, listWorkoutsBetween } from '../lib/repo';
+import {
+  GRANULARITIES,
+  METRICS,
+  aggregate,
+  buildPeriods,
+  exercisePeriodStats,
+  exerciseProgress,
+  percentChange,
+  scoreSummary,
+  type Granularity,
+  type MetricKey,
+} from '../lib/progress';
+
+const db = getDb();
+const params = Astro.url.searchParams;
+
+const vistaParam = params.get('vista') ?? '';
+const vista: Granularity = (GRANULARITIES as readonly string[]).includes(vistaParam)
+  ? (vistaParam as Granularity)
+  : 'semana';
+const metricaParam = params.get('metrica') ?? '';
+const metrica: MetricKey = Object.hasOwn(METRICS, metricaParam) ? (metricaParam as MetricKey) : 'volumen';
+const metric = METRICS[metrica];
+
+const exercises = listExercisesWithHistory(db);
+const exerciseId = Number(params.get('ejercicio'));
+const chosen = exercises.find((e) => e.id === exerciseId) ?? exercises[0] ?? null;
+
+const linkTo = (patch: Record<string, string>) => {
+  const query = new URLSearchParams({ vista, metrica, ...(chosen ? { ejercicio: String(chosen.id) } : {}), ...patch });
+  return `/progreso?${query}`;
+};
+
+// ----- totals per period -----
+const periods = buildPeriods(vista);
+const totals = aggregate(periods, listWorkoutsBetween(db, periods[0].fromMs, periods[periods.length - 1].toMs));
+const values = totals.map((t) => metric.pick(t));
+const hasData = totals.some((t) => t.workouts > 0);
+
+const fmt = (n: number) => Math.round(n).toLocaleString('es-ES');
+const withUnit = (n: number) => `${fmt(n)}${metric.unit ? ` ${metric.unit}` : ''}`;
+const pct = (p: number | null) => (p === null ? '—' : `${p > 0 ? '+' : p < 0 ? '−' : ''}${Math.abs(Math.round(p))} %`);
+const tone = (p: number | null) =>
+  p === null || p === 0 || !metric.higherIsBetter ? 'flat' : p > 0 ? 'up' : 'down';
+
+const completed = periods.map((p, i) => ({ p, value: values[i] })).filter((x) => !x.p.current);
+const lastDone = completed.at(-1);
+const beforeLast = completed.at(-2);
+const current = periods.map((p, i) => ({ p, value: values[i] })).find((x) => x.p.current);
+const lastChange = lastDone && beforeLast ? percentChange(lastDone.value, beforeLast.value) : null;
+
+const names: Record<Granularity, { last: string; now: string }> = {
+  dia: { last: 'Último día completo', now: 'Hoy' },
+  semana: { last: 'Última semana completa', now: 'Esta semana' },
+  mes: { last: 'Último mes completo', now: 'Este mes' },
+};
+
+const rows = periods
+  .map((p, i) => ({
+    p,
+    t: totals[i],
+    // An unfinished period would always look like a drop, so it is not compared.
+    change: i > 0 && !p.current ? percentChange(values[i], values[i - 1]) : null,
+  }))
+  .reverse();
+
+// ----- progress of one exercise -----
+const exerciseRows = chosen ? getExerciseSetHistory(db, chosen.id) : [];
+const progress = chosen ? exerciseProgress(exerciseRows) : null;
+const summary = progress ? scoreSummary(progress.sessions) : null;
+const scoreLabel = progress?.mode === 'e1rm' ? '1RM estimado (kg)' : 'Repeticiones de la mejor serie';
+const unit = progress?.mode === 'e1rm' ? ' kg' : ' reps';
+const dateOf = (ms: number) =>
+  new Date(ms).toLocaleDateString('es-ES', { day: 'numeric', month: 'short', year: '2-digit' });
+const kg = (n: number) => (Math.round(n * 10) / 10).toLocaleString('es-ES');
+// For an exercise, a higher score is always better, whatever metric is selected above.
+const toneUp = (p: number | null) => (p === null || p === 0 ? 'flat' : p > 0 ? 'up' : 'down');
+
+// This week vs last week vs last month, for the chosen exercise (independent of the Días/Semanas/Meses tabs).
+const now = new Date();
+const weeks = buildPeriods('semana', now, 2); // [last week, this week]
+const months = buildPeriods('mes', now, 2); // [last month, this month]
+const comparePeriods = [weeks[1], weeks[0], months[0]];
+const compareNames = ['Esta semana •', 'Semana pasada', 'Mes pasado'];
+const compareStats = exercisePeriodStats(exerciseRows, comparePeriods);
+const thisWeek = compareStats[0];
+const vsOf = (i: number) =>
+  thisWeek.best && compareStats[i].best ? percentChange(thisWeek.best.score, compareStats[i].best!.score) : null;
+
+// The same exercise, one row per period of the selected tab. Each change is against the previous period
+// in which the exercise was trained, and the unfinished period is not compared.
+const periodStats = exercisePeriodStats(exerciseRows, periods);
+let previousScore: number | null = null;
+const exerciseRowsByPeriod = periods
+  .map((p, i) => {
+    const stat = periodStats[i];
+    const change =
+      !p.current && stat.best && previousScore !== null ? percentChange(stat.best.score, previousScore) : null;
+    if (stat.best) previousScore = stat.best.score;
+    return { p, stat, change };
+  })
+  .filter((r) => r.stat.best !== null)
+  .reverse();
+const vistaName = vista === 'dia' ? 'día' : vista;
+---
+
+<Layout title="Progreso · Gym">
+  <h1>Progreso</h1>
+
+  <div class="chips">
+    {
+      GRANULARITIES.map((g) => (
+        <a class:list={['btn', { primary: g === vista }]} href={linkTo({ vista: g })}>
+          {g === 'dia' ? 'Días' : g === 'semana' ? 'Semanas' : 'Meses'}
+        </a>
+      ))
+    }
+  </div>
+  <div class="chips">
+    {
+      (Object.keys(METRICS) as MetricKey[]).map((key) => (
+        <a class:list={['btn', 'small', { primary: key === metrica }]} href={linkTo({ metrica: key })}>
+          {METRICS[key].label}
+        </a>
+      ))
+    }
+  </div>
+
+  {
+    !hasData ? (
+      <div class="card muted">Todavía no hay entrenamientos en este rango. Cuando registres series, aquí verás cómo evolucionas.</div>
+    ) : (
+      <>
+        <div class="two">
+          <div class="card">
+            <div class="muted">{names[vista].last}</div>
+            <div class="big">{lastDone ? withUnit(lastDone.value) : '—'}</div>
+            <div class={['delta', tone(lastChange)]}>
+              {lastChange === null ? 'sin período anterior con datos' : `${pct(lastChange)} vs anterior`}
+            </div>
+          </div>
+          <div class="card">
+            <div class="muted">{names[vista].now} (en curso)</div>
+            <div class="big">{current ? withUnit(current.value) : '—'}</div>
+            <div class="delta flat">{lastDone ? `anterior: ${withUnit(lastDone.value)}` : ''}</div>
+          </div>
+        </div>
+
+        <h2>{metric.label} por {vista === 'dia' ? 'día' : vista}</h2>
+        <div class="card">
+          <BarChart
+            ariaLabel={`${metric.label} por ${vista === 'dia' ? 'día' : vista}`}
+            bars={periods.map((p, i) => ({
+              label: p.label,
+              value: values[i],
+              current: p.current,
+              title: `${p.label}${p.current ? ' (en curso)' : ''}: ${withUnit(values[i])}`,
+            }))}
+          />
+          <p class="muted small-text">El borde discontinuo marca el período en curso, que todavía no está completo.</p>
+        </div>
+
+        <div class="card scroll">
+          <table>
+            <thead>
+              <tr>
+                <th>Período</th><th>Entr.</th><th>Series</th><th>Reps</th><th>Volumen</th><th>Min</th><th>Cambio</th>
+              </tr>
+            </thead>
+            <tbody>
+              {
+                rows.map(({ p, t, change }) => (
+                  <tr>
+                    <td>{p.label}{p.current ? ' •' : ''}</td>
+                    <td>{t.workouts}</td>
+                    <td>{t.sets}</td>
+                    <td>{fmt(t.reps)}</td>
+                    <td>{fmt(t.volumeKg)} kg</td>
+                    <td>{fmt(t.minutes)}</td>
+                    <td class={tone(change)}>{pct(change)}</td>
+                  </tr>
+                ))
+              }
+            </tbody>
+          </table>
+          <p class="muted small-text">
+            El cambio compara {metric.label.toLowerCase()} con la fila anterior (• = en curso). El volumen es repeticiones × kg, así que
+            ejercicios sin peso extra (dominadas, flexiones) suman 0: míralos en repeticiones o en su gráfico por ejercicio.
+          </p>
+        </div>
+      </>
+    )
+  }
+
+  <h2>Por ejercicio</h2>
+  {
+    !chosen || !progress || !summary ? (
+      <div class="card muted">Cuando registres series de un ejercicio, aquí verás su evolución sesión a sesión.</div>
+    ) : (
+      <>
+        <form method="GET" action="/progreso" class="card row">
+          <input type="hidden" name="vista" value={vista} />
+          <input type="hidden" name="metrica" value={metrica} />
+          <select name="ejercicio" aria-label="Ejercicio">
+            {
+              exercises.map((e) => (
+                <option value={e.id} selected={e.id === chosen.id}>
+                  {e.name} ({e.sessions})
+                </option>
+              ))
+            }
+          </select>
+          <button type="submit">Ver</button>
+        </form>
+
+        <h2>Esta semana vs antes</h2>
+        <div class="card scroll">
+          {
+            thisWeek.best ? (
+              <p style="margin-top:0">
+                Esta semana tu mejor serie es <strong>{thisWeek.best.reps} × {kg(thisWeek.best.weightKg)} kg</strong>
+                {progress.mode === 'e1rm' && ` (1RM estimado ${kg(thisWeek.best.score)} kg)`}.
+              </p>
+            ) : (
+              <p class="muted" style="margin-top:0">Esta semana todavía no has hecho este ejercicio.</p>
+            )
+          }
+          <table>
+            <thead>
+              <tr>
+                <th>Período</th><th>Mejor serie</th><th>{progress.mode === 'e1rm' ? '1RM est.' : 'Reps'}</th><th>Esta sem. vs</th><th>Series</th><th>Volumen</th>
+              </tr>
+            </thead>
+            <tbody>
+              {
+                comparePeriods.map((_, i) => {
+                  const stat = compareStats[i];
+                  const delta = i === 0 ? null : vsOf(i);
+                  return (
+                    <tr>
+                      <td>{compareNames[i]}</td>
+                      <td>{stat.best ? `${stat.best.reps} × ${kg(stat.best.weightKg)} kg` : 'sin datos'}</td>
+                      <td>{stat.best ? `${kg(stat.best.score)}${unit}` : '—'}</td>
+                      <td class={toneUp(delta)}>{i === 0 ? '—' : pct(delta)}</td>
+                      <td>{stat.sets}</td>
+                      <td>{fmt(stat.volumeKg)} kg</td>
+                    </tr>
+                  );
+                })
+              }
+            </tbody>
+          </table>
+          <p class="muted small-text">
+            Se compara tu mejor serie de esta semana (• = en curso, todavía incompleta) con la mejor de la semana pasada y de todo el mes pasado
+            {progress.mode === 'e1rm' ? ', usando el 1RM estimado para que valgan series con distinto peso y repeticiones' : ''}.
+            Mejor serie ≠ más volumen: si hoy hiciste menos series, el volumen puede ser menor aunque la serie sea mejor.
+          </p>
+        </div>
+
+        <div class="two">
+          <div class="card">
+            <div class="muted">Primera sesión</div>
+            <div class="big">{kg(summary.first)}{unit}</div>
+          </div>
+          <div class="card">
+            <div class="muted">Última sesión</div>
+            <div class="big">{kg(summary.last)}{unit}</div>
+            <div class={['delta', toneUp(summary.changePct)]}>
+              {summary.changePct === null ? 'una sola sesión' : `${pct(summary.changePct)} desde la primera`}
+            </div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="muted">{scoreLabel}, mejor serie de cada sesión (récord: {kg(summary.best)}{unit})</div>
+          <LineChart
+            ariaLabel={`${scoreLabel} de ${chosen.name}`}
+            points={progress.sessions.map((s) => ({
+              label: dateOf(s.startedAt),
+              value: s.score,
+              title: `${dateOf(s.startedAt)}: ${s.top.reps} × ${kg(s.top.weightKg)} kg → ${kg(s.score)}${unit}`,
+            }))}
+          />
+          {
+            progress.mode === 'e1rm' && (
+              <p class="muted small-text">
+                El 1RM estimado (fórmula de Epley: peso × (1 + reps / 30)) permite comparar series con distinto peso y repeticiones. Es una
+                estimación: pierde precisión por encima de ~12 repeticiones.
+              </p>
+            )
+          }
+        </div>
+
+        <h2>Por {vistaName}</h2>
+        <div class="card scroll">
+          {
+            exerciseRowsByPeriod.length === 0 ? (
+              <p class="muted" style="margin:0">Sin series de este ejercicio en este rango.</p>
+            ) : (
+              <table>
+                <thead>
+                  <tr>
+                    <th>Período</th><th>Mejor serie</th><th>{progress.mode === 'e1rm' ? '1RM est.' : 'Reps'}</th><th>Series</th><th>Volumen</th><th>Cambio</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {
+                    exerciseRowsByPeriod.map(({ p, stat, change }) => (
+                      <tr>
+                        <td>{p.label}{p.current ? ' •' : ''}</td>
+                        <td>{stat.best!.reps} × {kg(stat.best!.weightKg)} kg</td>
+                        <td>{kg(stat.best!.score)}{unit}</td>
+                        <td>{stat.sets}</td>
+                        <td>{fmt(stat.volumeKg)} kg</td>
+                        <td class={toneUp(change)}>{pct(change)}</td>
+                      </tr>
+                    ))
+                  }
+                </tbody>
+              </table>
+            )
+          }
+          <p class="muted small-text">El cambio compara la mejor serie con la del período anterior en el que entrenaste este ejercicio (• = en curso, sin comparar).</p>
+        </div>
+
+        <h2>Sesión a sesión</h2>
+        <div class="card scroll">
+          <table>
+            <thead>
+              <tr><th>Fecha</th><th>Mejor serie</th><th>Series</th><th>Volumen</th></tr>
+            </thead>
+            <tbody>
+              {
+                [...progress.sessions].reverse().map((s) => (
+                  <tr>
+                    <td>{dateOf(s.startedAt)}</td>
+                    <td>{s.top.reps} × {kg(s.top.weightKg)} kg</td>
+                    <td>{s.sets}</td>
+                    <td>{fmt(s.volumeKg)} kg</td>
+                  </tr>
+                ))
+              }
+            </tbody>
+          </table>
+        </div>
+      </>
+    )
+  }
+</Layout>
+
+<style>
+  .chips { display: flex; gap: 0.5rem; flex-wrap: wrap; margin-bottom: 0.6rem; }
+  .btn.small { padding: 0.45rem 0.75rem; font-size: 0.9rem; }
+  .two { display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem; }
+  .big { font-size: 1.6rem; font-weight: 800; margin: 0.2rem 0; }
+  .delta { font-size: 0.9rem; }
+  .up { color: var(--accent); }
+  .down { color: var(--danger); }
+  .flat { color: var(--muted); }
+  .small-text { font-size: 0.8rem; margin-bottom: 0; }
+  .scroll { overflow-x: auto; }
+  table { width: 100%; border-collapse: collapse; font-size: 0.9rem; white-space: nowrap; }
+  th { text-align: left; color: var(--muted); font-weight: 600; padding: 0.3rem 0.6rem 0.3rem 0; }
+  td { padding: 0.35rem 0.6rem 0.35rem 0; border-top: 1px solid var(--line); }
+</style>

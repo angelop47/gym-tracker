@@ -1,0 +1,53 @@
+---
+import Layout from '../../layouts/Layout.astro';
+import { getDb } from '../../lib/db';
+import { exerciseImageUrls } from '../../lib/images';
+import { listExercises } from '../../lib/repo';
+
+const exercises = listExercises(getDb());
+const groups = new Map<string, typeof exercises>();
+for (const e of exercises) groups.set(e.muscleGroup, [...(groups.get(e.muscleGroup) ?? []), e]);
+const capitalize = (text: string) => text.charAt(0).toUpperCase() + text.slice(1);
+---
+
+<Layout title="Ejercicios · Gym">
+  <h1>Ejercicios y fotos</h1>
+  <p class="muted">Toca un ejercicio para ver, añadir o eliminar sus fotos.</p>
+  {
+    [...groups.entries()].map(([group, list]) => (
+      <>
+        <h2>{capitalize(group)}</h2>
+        <ul class="plain">
+          {list.map((e) => {
+            const thumb = exerciseImageUrls(e)[0];
+            return (
+              <li class="card">
+                <a class="item" href={`/ejercicios/${e.id}`}>
+                  {thumb ? (
+                    <img src={thumb} alt="" width="64" height="43" loading="lazy" />
+                  ) : (
+                    <span class="blank" />
+                  )}
+                  <span>
+                    <strong>{e.name}</strong>
+                    <span class="muted small">
+                      {e.equipment}
+                      {e.photoIds.length > 0 ? ` · ${e.photoIds.length} ${e.photoIds.length === 1 ? 'foto' : 'fotos'}` : ''}
+                    </span>
+                  </span>
+                </a>
+              </li>
+            );
+          })}
+        </ul>
+      </>
+    ))
+  }
+</Layout>
+
+<style>
+  .item { display: flex; align-items: center; gap: 0.75rem; color: var(--text); text-decoration: none; }
+  img, .blank { width: 64px; height: 43px; object-fit: cover; border-radius: 6px; flex: none; }
+  .blank { background: var(--bg); border: 1px dashed var(--line); }
+  .small { display: block; font-size: 0.85rem; }
+</style>

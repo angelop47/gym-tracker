@@ -1,0 +1,82 @@
+---
+interface Props {
+  title?: string;
+}
+const { title = 'Gym' } = Astro.props;
+---
+
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#111418" />
+    <title>{title}</title>
+  </head>
+  <body>
+    <header>
+      <a href="/" class="brand">GYM</a>
+      <nav>
+        <a href="/">Hoy</a>
+        <a href="/routines">Rutinas</a>
+        <a href="/plan">Semana</a>
+        <a href="/calendario">Calendario</a>
+        <a href="/progreso">Progreso</a>
+      </nav>
+    </header>
+    <main><slot /></main>
+  </body>
+</html>
+
+<style is:global>
+  :root {
+    --bg: #111418;
+    --card: #1b2027;
+    --line: #2b323c;
+    --text: #e9edf2;
+    --muted: #8d98a8;
+    --accent: #4cc38a;
+    --danger: #e5604d;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font: 16px/1.4 system-ui, -apple-system, sans-serif;
+  }
+  header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 0.4rem 1rem;
+    padding: 0.75rem 1rem;
+    border-bottom: 1px solid var(--line);
+  }
+  .brand { font-weight: 800; letter-spacing: 0.15em; color: var(--accent); text-decoration: none; }
+  nav { display: flex; gap: 0.9rem; flex-wrap: wrap; }
+  nav a { color: var(--muted); text-decoration: none; }
+  main { max-width: 640px; margin: 0 auto; padding: 1rem; }
+  h1 { font-size: 1.4rem; margin: 0.5rem 0 1rem; }
+  h2 { font-size: 1rem; color: var(--muted); text-transform: uppercase; letter-spacing: 0.08em; margin: 1.5rem 0 0.5rem; }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 1rem; margin-bottom: 0.75rem; }
+  .muted { color: var(--muted); }
+  .row { display: flex; align-items: center; justify-content: space-between; gap: 0.75rem; }
+  a { color: var(--accent); }
+  button, .btn {
+    appearance: none; border: 1px solid var(--line); background: var(--card); color: var(--text);
+    border-radius: 10px; padding: 0.75rem 1rem; font: inherit; font-weight: 600; cursor: pointer;
+    text-decoration: none; display: inline-block; text-align: center;
+  }
+  button.primary, .btn.primary { background: var(--accent); border-color: var(--accent); color: #07140d; }
+  button.danger { color: var(--danger); }
+  button.big { width: 100%; padding: 1.1rem; font-size: 1.15rem; }
+  button:disabled { opacity: 0.5; }
+  input, select {
+    width: 100%; background: var(--bg); color: var(--text); border: 1px solid var(--line);
+    border-radius: 10px; padding: 0.7rem; font: inherit;
+  }
+  label { display: block; color: var(--muted); font-size: 0.85rem; margin-bottom: 0.25rem; }
+  ul.plain { list-style: none; margin: 0; padding: 0; }
+</style>

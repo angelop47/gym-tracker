@@ -1,0 +1,81 @@
+---
+import Layout from '../../layouts/Layout.astro';
+import { getDb } from '../../lib/db';
+import { deleteRoutine, getRoutineItems, listRoutines } from '../../lib/repo';
+import { FIVE_DAY_PLAN, installPlan } from '../../lib/templates';
+import { exerciseImageUrls } from '../../lib/images';
+
+const db = getDb();
+
+if (Astro.request.method === 'POST') {
+  const form = await Astro.request.formData();
+  if (form.get('action') === 'load-plan') installPlan(db, FIVE_DAY_PLAN);
+  else deleteRoutine(db, Number(form.get('id')));
+  return Astro.redirect('/routines', 303);
+}
+
+const routines = listRoutines(db).map((r) => ({ ...r, items: getRoutineItems(db, r.id) }));
+const planLoaded = FIVE_DAY_PLAN.every((day) => routines.some((r) => r.name === day.name));
+---
+
+<Layout title="Rutinas · Gym">
+  <div class="row">
+    <h1>Rutinas</h1>
+    <a class="btn primary" href="/routines/new">Nueva</a>
+  </div>
+  <p><a href="/ejercicios">Ejercicios y fotos</a></p>
+  {
+    !planLoaded && (
+      <form method="POST" class="card">
+        <input type="hidden" name="action" value="load-plan" />
+        <p style="margin-top:0">
+          Carga el plan de 5 días (pecho/espalda, pierna, empuje, tirón, volumen) en lunes, martes, jueves, viernes y sábado.
+        </p>
+        <button class="primary big" type="submit">Cargar plan de 5 días</button>
+      </form>
+    )
+  }
+  {routines.length === 0 && <p class="muted">Todavía no hay rutinas.</p>}
+  {
+    routines.map((r) => (
+      <div class="card">
+        <div class="row">
+          <strong>{r.name}</strong>
+          <div style="display:flex;gap:0.5rem">
+            <a class="btn" href={`/routines/${r.id}/editar`}>Editar</a>
+            <form
+              method="POST"
+              data-name={r.name}
+              onsubmit="return confirm('¿Eliminar la rutina «' + this.dataset.name + '»? Tus entrenamientos ya registrados se conservan.')"
+            >
+              <input type="hidden" name="id" value={r.id} />
+              <button class="danger" type="submit">Eliminar</button>
+            </form>
+          </div>
+        </div>
+        <ul class="plain muted">
+          {r.items.map((i) => (
+            <li style="display:flex;align-items:center;gap:0.6rem;margin-top:0.5rem">
+              {exerciseImageUrls(i)[0] ? (
+                <img
+                  src={exerciseImageUrls(i)[0]}
+                  alt=""
+                  width="60"
+                  height="40"
+                  loading="lazy"
+                  style="object-fit:cover;border-radius:6px;flex:none"
+                />
+              ) : (
+                <span style="width:60px;height:40px;flex:none" />
+              )}
+              <span>
+                {i.name} · {i.targetSets}×{i.repsLabel ?? i.targetReps}
+                {i.note ? ` (${i.note})` : ''} · descanso {i.restSeconds}s
+              </span>
+            </li>
+          ))}
+        </ul>
+      </div>
+    ))
+  }
+</Layout>

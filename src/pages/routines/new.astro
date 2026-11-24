@@ -1,0 +1,13 @@
+---
+import Layout from '../../layouts/Layout.astro';
+import RoutineForm from '../../components/RoutineForm';
+import { getDb } from '../../lib/db';
+import { listExercises } from '../../lib/repo';
+
+const exercises = listExercises(getDb());
+---
+
+<Layout title="Nueva rutina · Gym">
+  <h1>Nueva rutina</h1>
+  <RoutineForm client:only="react" exercises={exercises} />
+</Layout>

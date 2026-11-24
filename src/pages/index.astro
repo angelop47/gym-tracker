@@ -1,0 +1,92 @@
+---
+import Layout from '../layouts/Layout.astro';
+import { getDb } from '../lib/db';
+import { getActiveWorkoutId, getWeekPlan, listRecentWorkouts, listRoutines } from '../lib/repo';
+import { formatDuration } from '../lib/rest';
+
+const db = getDb();
+const routines = listRoutines(db);
+const todayRoutineId = getWeekPlan(db)[new Date().getDay()];
+const todayRoutine = routines.find((r) => r.id === todayRoutineId) ?? null;
+const activeId = getActiveWorkoutId(db);
+const recent = listRecentWorkouts(db, 8);
+
+const fmtDate = (ms: number) =>
+  new Date(ms).toLocaleDateString('es-ES', { weekday: 'short', day: 'numeric', month: 'short' });
+---
+
+<Layout title="Hoy · Gym">
+  <h1>Hoy</h1>
+
+  {
+    activeId !== null && (
+      <div class="card">
+        <p>Hay un entrenamiento en curso.</p>
+        <a class="btn primary" href={`/workouts/${activeId}`}>Continuar entrenamiento</a>
+      </div>
+    )
+  }
+
+  {
+    todayRoutine ? (
+      <div class="card">
+        <div class="muted">Planificado para hoy</div>
+        <h2 style="margin:0.25rem 0 0.75rem;color:inherit;text-transform:none;font-size:1.2rem">
+          {todayRoutine.name}
+        </h2>
+        <form method="POST" action="/workouts/start">
+          <input type="hidden" name="routineId" value={todayRoutine.id} />
+          <button class="primary big" type="submit">Empezar entrenamiento</button>
+        </form>
+      </div>
+    ) : (
+      <div class="card muted">
+        Hoy no hay nada planificado. <a href="/plan">Planifica tu semana</a> o empieza una rutina abajo.
+      </div>
+    )
+  }
+
+  {
+    routines.length > 0 && (
+      <>
+        <h2>Empezar otra rutina</h2>
+        <form method="POST" action="/workouts/start" class="card row">
+          <select name="routineId">
+            {routines.map((r) => (
+              <option value={r.id}>{r.name}</option>
+            ))}
+          </select>
+          <button type="submit">Empezar</button>
+        </form>
+      </>
+    )
+  }
+
+  {
+    routines.length === 0 && (
+      <div class="card">
+        <p>Todavía no tienes rutinas.</p>
+        <a class="btn primary" href="/routines/new">Crea tu primera rutina</a>
+      </div>
+    )
+  }
+
+  <div class="row">
+    <h2>Historial</h2>
+    <a href="/calendario">Ver calendario</a>
+  </div>
+  {recent.length === 0 && <p class="muted">Aún no hay entrenamientos.</p>}
+  <ul class="plain">
+    {
+      recent.map((w) => (
+        <li class="card">
+          <a href={`/workouts/${w.id}`}>{w.routineName ?? 'Rutina eliminada'}</a>
+          <div class="muted">
+            {fmtDate(w.startedAt)} · {w.setCount} {w.setCount === 1 ? 'serie' : 'series'} · {Math.round(w.volumeKg)} kg
+            {w.endedAt ? ` · ${formatDuration(w.startedAt, w.endedAt)}` : ' · en curso'}
+          </div>
+        </li>
+      ))
+    }
+  </ul>
+</Layout>

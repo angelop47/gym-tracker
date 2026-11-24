@@ -1,0 +1,142 @@
+---
+import Layout from '../../layouts/Layout.astro';
+import WorkoutSession from '../../components/WorkoutSession';
+import { getDb } from '../../lib/db';
+import { getSession, getWorkoutSummary } from '../../lib/repo';
+import { formatDuration } from '../../lib/rest';
+import { toDatetimeLocal } from '../../lib/calendar';
+
+const id = Number(Astro.params.id);
+const db = getDb();
+const session = Number.isInteger(id) ? getSession(db, id) : null;
+if (!session) return new Response('Entrenamiento no encontrado', { status: 404 });
+
+const { workout, items } = session;
+const summary = workout.endedAt !== null ? getWorkoutSummary(db, id) : null;
+const editing = summary !== null && Astro.url.searchParams.get('editar') === '1';
+const error = Astro.url.searchParams.get('error');
+const name = workout.routineName ?? 'Entrenamiento';
+---
+
+<Layout title={`${name} · Gym`}>
+  {
+    summary && workout.endedAt !== null && !editing && (
+      <>
+        <h1>{name}</h1>
+        <p class="muted">
+          {new Date(workout.startedAt).toLocaleString('es-ES')} ·{' '}
+          {formatDuration(workout.startedAt, workout.endedAt)} · {Math.round(summary.volumeKg)} kg en total
+        </p>
+        {summary.exercises.length === 0 && <p class="muted">No se registró ninguna serie.</p>}
+        {summary.exercises.map((e) => (
+          <div class="card">
+            <strong>{e.name}</strong>
+            <ul class="plain muted">
+              {e.sets.map((s, i) => (
+                <li>
+                  Serie {i + 1}: {s.reps} × {s.weightKg} kg
+                </li>
+              ))}
+            </ul>
+          </div>
+        ))}
+        <div class="row">
+          <a class="btn" href="/">Volver</a>
+          <a class="btn" href={`/workouts/${id}?editar=1`}>Editar</a>
+          <form
+            method="POST"
+            action={`/workouts/${id}/eliminar`}
+            onsubmit="return confirm('¿Eliminar este entrenamiento y todas sus series? No se puede deshacer.')"
+          >
+            <button class="danger" type="submit">Eliminar</button>
+          </form>
+        </div>
+      </>
+    )
+  }
+
+  {
+    summary && editing && (
+      <>
+        <h1>Editar · {name}</h1>
+        {error && <p style="color:var(--danger)">{error}</p>}
+        <form method="POST" action={`/workouts/${id}/editar`}>
+          <div class="card">
+            <label for="inicio">Fecha y hora de inicio</label>
+            <input id="inicio" type="datetime-local" name="inicio" value={toDatetimeLocal(workout.startedAt)} required />
+            <p class="muted small">Al cambiarla se mueve todo el entrenamiento (la duración y el orden de las series se conservan).</p>
+          </div>
+          {summary.exercises.map((e) => (
+            <div class="card">
+              <strong>{e.name}</strong>
+              <div class="set-row head">
+                <span />
+                <span>Reps</span>
+                <span>Kg</span>
+                <span />
+              </div>
+              {e.sets.map((s, i) => (
+                <div class="set-row">
+                  <span class="muted">Serie {i + 1}</span>
+                  <input
+                    type="number"
+                    name={`reps-${s.id}`}
+                    value={s.reps}
+                    min="1"
+                    step="1"
+                    inputmode="numeric"
+                    aria-label={`Repeticiones de la serie ${i + 1} de ${e.name}`}
+                    required
+                  />
+                  <input
+                    type="number"
+                    name={`kg-${s.id}`}
+                    value={s.weightKg}
+                    min="0"
+                    step="0.5"
+                    inputmode="decimal"
+                    aria-label={`Peso de la serie ${i + 1} de ${e.name}`}
+                    required
+                  />
+                  <label class="remove">
+                    <input type="checkbox" name={`del-${s.id}`} /> Quitar
+                  </label>
+                </div>
+              ))}
+            </div>
+          ))}
+          <div class="row">
+            <a class="btn" href={`/workouts/${id}`}>Cancelar</a>
+            <button class="primary" type="submit">Guardar cambios</button>
+          </div>
+        </form>
+      </>
+    )
+  }
+
+  {
+    !summary && (
+      <WorkoutSession
+        client:only="react"
+        workoutId={workout.id}
+        routineName={name}
+        startedAt={workout.startedAt}
+        items={items}
+      />
+    )
+  }
+</Layout>
+
+<style>
+  .small { font-size: 0.8rem; margin: 0.5rem 0 0; }
+  .set-row {
+    display: grid;
+    grid-template-columns: 4.2rem 1fr 1fr auto;
+    gap: 0.5rem;
+    align-items: center;
+    margin-top: 0.5rem;
+  }
+  .head { color: var(--muted); font-size: 0.8rem; margin-top: 0.75rem; }
+  .remove { display: flex; align-items: center; gap: 0.3rem; margin: 0; color: var(--muted); }
+  .remove input { width: auto; }
+</style>
